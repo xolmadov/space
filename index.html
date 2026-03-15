@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IZATLODEV</title>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&display=swap" rel="stylesheet">
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body { margin: 0; padding: 0; background-color: #020205; overflow: hidden; font-family: 'Orbitron', sans-serif; }
+        .container { position: relative; width: 100vw; height: 100vh; }
+        
+        .input_video {
+            position: absolute; width: 100%; height: 100%; object-fit: cover;
+            opacity: 0.15; filter: grayscale(100%) brightness(0.5);
+            transform: scaleX(-1);
+            z-index: 0;
+        }
+        
+        .output_canvas {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2;
+        }
+
+        #ui-status {
+            position: absolute; top: 20px; left: 20px; color: #00f3ff;
+            z-index: 10; text-shadow: 0 0 15px #00f3ff; font-size: 20px; letter-spacing: 1px;
+        }
+        .sub-status { font-size: 14px; opacity: 0.7; }
+        
+        #loading {
+            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            color: #00f3ff; font-size: 24px; z-index: 20; animation: pulse 1.5s infinite;
+            text-align: center;
+        }
+        @keyframes pulse { 0%, 100% { opacity: 1; text-shadow: 0 0 30px #00f3ff; } 50% { opacity: 0.3; } }
+    </style>
+</head>
+<body>
+
+    <div id="loading">NEYRON TIZIM YUKLANMOQDA...<br><span style="font-size:14px">Kamera ruxsatini kuting</span></div>
+    <div class="container">
+        <video class="input_video" autoplay playsinline></video>
+        <canvas class="output_canvas"></canvas>
+        <div id="ui-status">TIZIM FAOL <br><span class="sub-status">Koinot rejimi</span></div>
+    </div>
+
+<script>
+    const video = document.querySelector('.input_video');
+    const canvas = document.querySelector('.output_canvas');
+    const ctx = canvas.getContext('2d');
+    const statusEl = document.getElementById('ui-status');
+
+    let cw = canvas.width = window.innerWidth;
+    let ch = canvas.height = window.innerHeight;
+
+    window.addEventListener('resize', () => { cw = canvas.width = window.innerWidth; ch = canvas.height = window.innerHeight; });
+
+    function getTextPoints(text, scale, density) {
+        const tempCanvas = document.createElement('canvas');
+        const tCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        tempCanvas.width = cw; tempCanvas.height = ch;
+        
+        tCtx.font = text.match(/\p{Emoji}/u) ? `${scale}px sans-serif` : `bold ${scale}px Orbitron, sans-serif`;
+        tCtx.fillStyle = 'white';
+        tCtx.textAlign = 'center'; tCtx.textBaseline = 'middle';
+        tCtx.fillText(text, cw / 2, ch / 2);
+
+        const imgData = tCtx.getImageData(0, 0, cw, ch).data;
+        const points = [];
+        for(let y = 0; y < ch; y += density) {
+            for(let x = 0; x < cw; x += density) {
+                if(imgData[(y * cw + x) * 4 + 3] > 128) {
+                    points.push({x, y});
+                }
+            }
+        }
+        return points;
+    }
+
+    const pointsOzodbek = getTextPoints("OZODBEKDEV", Math.min(cw/6, 150), 7);
+    const pointsNAME = getTextPoints("NAME ❤️", Math.min(cw/5, 180), 7);
+    const pointsThumbEmoji = getTextPoints("👍", Math.min(cw/4, 200), 6);
+
+    const PARTICLE_COUNT = 2500; 
+    const particles = [];
+    for(let i=0; i<PARTICLE_COUNT; i++) {
+        particles.push({
+            x: Math.random() * cw, y: Math.random() * ch,
+            vx: 0, vy: 0,
+            baseX: Math.random() * cw, baseY: Math.random() * ch,
+            color: '#00f3ff', size: Math.random() * 2 + 1, friction: 0.8 + Math.random() * 0.1
+        });
+    }
+
+    let currentState = 'GALAXY'; 
+    let hand1X = cw/2, hand1Y = ch/2;
+    let hand2X = cw/2, hand2Y = ch/2;
+    let isDualMode = false;
+    let time = 0;
+
+    function renderParticles() {
+        ctx.clearRect(0, 0, cw, ch);
+        time += 0.01;
+
+        for(let i=0; i<PARTICLE_COUNT; i++) {
+            let p = particles[i];
+            let targetX = p.baseX; let targetY = p.baseY;
+            let targetColor = '#00f3ff';
+
+            if (currentState === 'DUAL_MIX') {
+                if (i % 2 === 0) {
+                    const angle = (i / PARTICLE_COUNT) * Math.PI * 4; 
+                    const radius = 150 + Math.sin(time * 2 + i) * 10;
+                    targetX = hand1X + Math.cos(angle) * radius;
+                    targetY = hand1Y + Math.sin(angle) * radius;
+                    targetColor = '#00f3ff';
+                } else {
+                    const angle = time + i * 0.02;
+                    const radius = (i%1250) * 0.15; 
+                    targetX = hand2X + Math.cos(angle) * radius;
+                    targetY = hand2Y + Math.sin(angle) * radius;
+                    targetColor = '#ff6600'; 
+                }
+            }
+            else if (currentState === 'CIRCLE') {
+                const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
+                const radius = 180 + Math.sin(time * 2 + i) * 20;
+                targetX = hand1X + Math.cos(angle) * radius;
+                targetY = hand1Y + Math.sin(angle) * radius;
+            } 
+            else if (currentState === 'SPHERE') {
+                const phi = Math.acos(-1 + (2 * i) / PARTICLE_COUNT);
+                const theta = Math.sqrt(PARTICLE_COUNT * Math.PI) * phi + time * 2; 
+                const radius = 100;
+                targetX = hand1X + radius * Math.cos(theta) * Math.sin(phi);
+                targetY = hand1Y + radius * Math.sin(theta) * Math.sin(phi);
+                const depth = Math.cos(phi);
+                targetColor = depth > 0.5 ? '#00f3ff' : '#0099ff';
+            }
+            else if (currentState === 'STAR') {
+                const angle = (i / PARTICLE_COUNT) * Math.PI * 2 + time;
+                const r = 150 * (Math.abs(Math.cos(angle * 2.5)) + 0.2); 
+                targetX = hand1X + r * Math.cos(angle);
+                targetY = hand1Y + r * Math.sin(angle);
+                targetColor = '#ffcc00'; 
+            }
+            else if (currentState === 'EMOJI_THUMB') {
+                const pt = pointsThumbEmoji[i % pointsThumbEmoji.length];
+                if(pt) { targetX = pt.x; targetY = pt.y; }
+                targetColor = '#ffcc00'; 
+            }
+            else if (currentState === 'HEART_BIG') {
+                const angle = (i / PARTICLE_COUNT) * Math.PI * 2;
+                const scale = Math.min(cw, ch) / 25; 
+                const hx = 16 * Math.pow(Math.sin(angle), 3);
+                const hy = -(13 * Math.cos(angle) - 5 * Math.cos(2*angle) - 2 * Math.cos(3*angle) - Math.cos(4*angle));
+                targetX = hand1X + hx * scale;
+                targetY = hand1Y + hy * scale;
+                targetColor = '#ff0000'; 
+            }
+            else if (currentState === 'TEXT_OZODBEK') {
+                const pt = pointsOzodbek[i % pointsOzodbek.length];
+                if(pt) { targetX = pt.x; targetY = pt.y; }
+            }
+            else if (currentState === 'TEXT_NAME') {
+                const pt = pointsNAME[i % pointsNAME.length];
+                if(pt) { targetX = pt.x; targetY = pt.y; }
+                targetColor = '#ff3399'; 
+            } 
+            else {
+                p.baseX += Math.sin(time + i) * 0.5; p.baseY += Math.cos(time + i) * 0.5;
+                if(p.baseX < 0) p.baseX = cw; if(p.baseX > cw) p.baseX = 0;
+                if(p.baseY < 0) p.baseY = ch; if(p.baseY > ch) p.baseY = 0;
+                targetX = p.baseX; targetY = p.baseY;
+            }
+
+            let dx = targetX - p.x; let dy = targetY - p.y;
+            p.vx += dx * 0.05; p.vy += dy * 0.05;
+            p.vx *= p.friction; p.vy *= p.friction;
+            p.x += p.vx; p.y += p.vy;
+
+            ctx.fillStyle = targetColor;
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        requestAnimationFrame(renderParticles);
+    }
+
+    function isFingerUp(lm, tipIdx, dipIdx) { return lm[tipIdx].y < lm[dipIdx].y; }
+
+    function detectGesture(lm) {
+        const thumbDistance = Math.hypot(lm[4].x - lm[9].x, lm[4].y - lm[9].y);
+        const refDistance = Math.hypot(lm[5].x - lm[9].x, lm[5].y - lm[9].y);
+        const thumbIsOpen = thumbDistance > refDistance * 1.2; 
+
+        const index = isFingerUp(lm, 8, 6);
+        const middle = isFingerUp(lm, 12, 10);
+        const ring = isFingerUp(lm, 16, 14);
+        const pinky = isFingerUp(lm, 20, 18);
+
+        if (index && middle && !ring && !pinky) return 'PEACE'; 
+        if (index && !middle && !ring && !pinky && !thumbIsOpen) return 'POINT'; 
+        if (!index && !middle && !ring && !pinky && !thumbIsOpen) return 'FIST'; 
+        if (index && middle && ring && pinky) return 'OPEN'; 
+        if (index && !middle && !ring && pinky) return 'ROCK'; 
+        if (index && !middle && !ring && !pinky && thumbIsOpen) return 'L_SHAPE'; 
+        if (!index && !middle && !ring && !pinky && thumbIsOpen) return 'THUMBSUP'; 
+
+        return 'UNKNOWN';
+    }
+
+    function onResults(results) {
+        document.getElementById('loading').style.display = 'none';
+        
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            let numHands = results.multiHandLandmarks.length;
+            
+            for (const landmarks of results.multiHandLandmarks) {
+                 ctx.save(); ctx.scale(-1, 1); ctx.translate(-cw, 0);
+                 drawConnectors(ctx, landmarks, HAND_CONNECTIONS, {color: 'rgba(0, 243, 255, 0.3)', lineWidth: 2});
+                 drawLandmarks(ctx, landmarks, {color: 'rgba(255, 255, 255, 0.6)', fillColor: 'rgba(0, 243, 255, 0.5)', lineWidth: 1, radius: 3});
+                 ctx.restore();
+            }
+
+            if (numHands === 2) {
+                isDualMode = true;
+                hand1X = (1 - results.multiHandLandmarks[0][9].x) * cw; hand1Y = results.multiHandLandmarks[0][9].y * ch;
+                hand2X = (1 - results.multiHandLandmarks[1][9].x) * cw; hand2Y = results.multiHandLandmarks[1][9].y * ch;
+                
+                currentState = 'DUAL_MIX';
+                statusEl.innerHTML = "IKKI QO'L ANIQLANDI: <br>DOIRA + SPIRAL";
+                statusEl.style.color = "#00f3ff";
+
+            } else {
+                isDualMode = false;
+                hand1X = (1 - results.multiHandLandmarks[0][9].x) * cw; 
+                hand1Y = results.multiHandLandmarks[0][9].y * ch;
+
+                let gesture = detectGesture(results.multiHandLandmarks[0]);
+                statusEl.style.color = "#00f3ff"; 
+                
+                switch(gesture) {
+                    case 'OPEN': currentState = 'CIRCLE'; statusEl.innerHTML = "SHAKL: DOIRA"; break;
+                    case 'FIST': currentState = 'SPHERE'; statusEl.innerHTML = "SHAKL: 3D SFERA"; break;
+                    case 'POINT': currentState = 'TEXT_OZODBEK'; statusEl.innerHTML = "SHAKL: OZODBEKDEV"; break;
+                    case 'PEACE': currentState = 'TEXT_NAME'; statusEl.innerHTML = "MAXSUS REJIM: SEVGI PROTOKOLI ❤️"; statusEl.style.color = "#ff3399"; break;
+                    case 'ROCK': currentState = 'STAR'; statusEl.innerHTML = "SHAKL: YULDUZ (Rock!)"; statusEl.style.color = "#ffcc00"; break;
+                    case 'THUMBSUP': 
+                        currentState = 'EMOJI_THUMB'; 
+                        statusEl.innerHTML = "SHAKL: KLASS EMOJI 👍"; 
+                        statusEl.style.color = "#ffcc00"; 
+                        break;
+                    case 'L_SHAPE': 
+                        currentState = 'HEART_BIG'; 
+                        statusEl.innerHTML = "SHAKL: KATTA YURAK ❤️"; 
+                        statusEl.style.color = "#ff0000"; 
+                        break;
+                    default: currentState = 'GALAXY'; statusEl.innerHTML = "TIZIM FAOL <br><span class='sub-status'>Buyruq kutilmoqda...</span>";
+                }
+            }
+        } else {
+            currentState = 'GALAXY';
+            statusEl.innerHTML = "QO'L QIDIRILMOQDA... <br><span class='sub-status'>Kamera maydoniga kiring</span>";
+            statusEl.style.color = "#ffffff";
+        }
+    }
+
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({ maxNumHands: 2, modelComplexity: 1, minDetectionConfidence: 0.6, minTrackingConfidence: 0.6 });
+    hands.onResults(onResults);
+
+    const camera = new Camera(video, {
+        onFrame: async () => { await hands.send({image: video}); },
+        width: 1280, height: 720
+    });
+    camera.start().then(() => renderParticles());
+
+</script>
+</body>
+</html>
